@@ -1,34 +1,36 @@
 # GCP Service Account 로 Azure Foundry gpt-image 모델 호출하기
 
-GCP Service Account 가 발급한 Google ID token 을 Microsoft Entra ID 토큰으로 교환해, **API key 없이** Azure Foundry 의 `gpt-image` 모델을 호출합니다.
+GCP Service Account 명의로 발급받은 Google ID token 을 Microsoft Entra ID 토큰으로 교환해, **API key 없이** Azure Foundry 의 `gpt-image` 모델을 호출합니다.
 
 ```mermaid
 flowchart BT
     User(["User"])
     subgraph GCP["Google Cloud"]
-        SA["<b>Service Account</b><br/><small>IAM</small>"]
-        Issuer["<b>OIDC Issuer</b><br/><small>accounts.google.com</small>"]
+        SA["<b>Service Account</b><br/>IAM"]
+        Issuer["<b>OIDC Issuer</b><br/>accounts.google.com"]
     end
     subgraph Azure["Azure"]
-        MI["<b>Managed Identity</b><br/><small>+ Federated Credential</small>"]
-        Foundry["<b>Azure Foundry</b><br/><small>gpt-image model</small>"]
+        Entra["<b>Microsoft Entra ID</b><br/>login.microsoftonline.com"]
+        MI["<b>Managed Identity</b><br/>+ Federated Credential"]
+        Foundry["<b>Azure Foundry</b><br/>gpt-image model"]
     end
 
     User -- "①" --> SA
-    User <-- "② ③" --> MI
+    User <-- "② ③" --> Entra
     User -- "④" --> Foundry
-    Foundry -. "<b>RBAC</b><br/><small>Cognitive Services OpenAI User</small>" .- MI
-    MI -. "<b>③ 서명 검증</b><br/><small>공개 키 (JWKS)</small>" .-> Issuer
+    Entra -. "<b>③ 서명 검증</b><br/>공개 키 (JWKS)" .-> Issuer
+    Entra -. "<b>③ claim 확인</b><br/>iss / sub / aud" .- MI
+    Foundry -. "<b>RBAC</b><br/>Cognitive Services OpenAI User" .- MI
 
     classDef az fill:#e6f2fb,stroke:#0078d4,color:#1b1b1b
     classDef gcp fill:#e8f0fe,stroke:#4285f4,color:#1b1b1b
     classDef user fill:#f3f3f3,stroke:#5f6368,color:#1b1b1b
-    class MI,Foundry az
+    class Entra,MI,Foundry az
     class SA,Issuer gcp
     class User user
 ```
 
-1. User 가 GCP Service Account 의 Google ID token 을 받습니다. audience 는 `api://AzureADTokenExchange` 입니다.
+1. User 가 GCP Service Account 를 impersonate 해 SA 명의의 Google ID token 을 발급받습니다. audience 는 `api://AzureADTokenExchange` 입니다.
 2. User 가 이 토큰을 Microsoft Entra ID 로 보내 Managed Identity 의 access token 을 요청합니다.
 3. Entra ID 는 Google(Issuer)의 공개 키로 토큰 서명을 검증하고, claim(issuer, subject, audience)이 Managed Identity 의 Federated Credential 에 등록된 값과 일치하는지 확인하고, User 에게 access token 을 발급합니다.
 4. User 는 이 access token 으로 Azure Foundry 의 `gpt-image` 모델을 호출합니다. Foundry 는 Managed Identity 에 할당된 `Cognitive Services OpenAI User` 역할로 권한을 확인합니다.
@@ -52,7 +54,7 @@ flowchart BT
 
 ![](assets/01%20-%20GCP%20-%20service%20account.png)
 
-Service account name (예: `sa-aoai-gpt-image`) 을 입력하고 **Create and continue**.
+**Service account name** 을 입력하면 **Service account ID** 가 자동으로 채워집니다. 5단계 `--sa` 에는 name 이 아니라 이 **ID** 를 사용합니다. **Create and continue**.
 
 ![](assets/01%20-%20GCP%20-%20service%20account%20-%2001%20account%20name.png)
 
@@ -66,7 +68,7 @@ Service account name (예: `sa-aoai-gpt-image`) 을 입력하고 **Create and co
 
 ![](assets/01%20-%20GCP%20-%20service%20account%20-%2003%20principals.png)
 
-생성된 SA 을 선택해 상세 화면으로 넘어갑니다.
+생성된 SA 를 선택해 상세 화면으로 넘어갑니다.
 
 ![](assets/01%20-%20GCP%20-%20service%20account%20-%2004%20create%20completion.png)
 
@@ -100,7 +102,7 @@ Federated credential scenario 는 **Other**.
 |---|---|
 | Issuer URL | `https://accounts.google.com` |
 | Subject identifier | [1단계](#1-gcp--service-account-생성)에서 복사한 SA 의 **Unique ID** |
-| Name | 임의 (예: `gcp-sa-aoai-gpt-image`) |
+| Name | 임의 |
 | Audience | `api://AzureADTokenExchange` |
 
 ![](assets/02%20-%20AZ%20-%20managed%20identity%20-%2004%20add%20federated%20credential%20details.png)
@@ -125,7 +127,9 @@ Members: **+ Select members** → [2단계](#2-azure--managed-identity-와-feder
 
 ## 4. GCP — Token Creator 권한 부여
 
-이 저장소는 로컬에서 사용자 GCP 계정으로 `gpt-image` 모델 호출을 테스트합니다. 사용자 계정이 SA 를 impersonate 하므로, 그 사용자에게 SA 에 대한 역할을 부여해야 합니다. 만약 Cloud Run / Cloud Functions / GCE 에서 실행한다면, 이 단계 대신 런타임의 Service account 를 [1단계](#1-gcp--service-account-생성)의 SA 로 지정하면 됩니다.
+이 저장소는 로컬에서 사용자 GCP 계정으로 `gpt-image` 모델 호출을 테스트합니다. 사용자 계정이 SA 를 impersonate 하므로, 그 사용자에게 SA 에 대한 역할을 부여해야 합니다.
+
+impersonation 은 **IAM Service Account Credentials API**(`iamcredentials.googleapis.com`)를 사용합니다. SA 가 있는 프로젝트의 **APIs & Services → Library** 에서 이 API 를 검색해 **Enable** 합니다. 이미 활성화되어 있으면 넘어갑니다.
 
 SA 상세 화면에서 **Principals with access → Grant access** 를 선택합니다.
 
@@ -141,25 +145,25 @@ SA 상세 화면에서 **Principals with access → Grant access** 를 선택합
 flowchart LR
     subgraph Client["실행 환경"]
         direction TB
-        Login["<b>gcloud 로그인</b><br/><small>auth application-default login</small>"]
-        Code["<b>호출 코드</b><br/><small>call_gpt_image.py</small>"]
+        Login["<b>gcloud 로그인</b><br/>gcloud auth login"]
+        Code["<b>호출 코드</b><br/>call_gpt_image.py"]
         Login --> Code
     end
 
     subgraph GCP["Google Cloud"]
-        IAM["<b>IAM Credentials API</b><br/><small>GenerateIdToken</small>"]
-        SA["<b>Service Account</b><br/><small>sa-aoai-gpt-image</small>"]
-        Issuer["<b>OIDC Issuer</b><br/><small>accounts.google.com</small>"]
+        IAM["<b>IAM Credentials API</b><br/>GenerateIdToken"]
+        SA["<b>Service Account</b>"]
+        Issuer["<b>OIDC Issuer</b><br/>accounts.google.com"]
         IAM -. impersonate .-> SA
     end
 
     subgraph Azure["Microsoft Azure"]
         direction TB
-        Entra["<b>Microsoft Entra ID</b><br/><small>login.microsoftonline.com</small>"]
-        UAMI["<b>Managed Identity</b><br/><small>uami-hol-shabby-001<br/>+ Federated Credential</small>"]
-        Foundry["<b>Azure Foundry</b><br/><small>aif-hol-shabby-tcz7<br/>gpt-image model</small>"]
+        Entra["<b>Microsoft Entra ID</b><br/>login.microsoftonline.com"]
+        UAMI["<b>Managed Identity</b><br/>+ Federated Credential"]
+        Foundry["<b>Azure Foundry</b><br/>gpt-image model"]
         Entra -.- UAMI
-        UAMI -. "<b>RBAC</b><br/><small>Cognitive Services OpenAI User</small>" .-> Foundry
+        UAMI -. "<b>RBAC</b><br/>Cognitive Services OpenAI User" .-> Foundry
     end
 
     Code -- "① ID token 요청" --> IAM
@@ -178,10 +182,10 @@ flowchart LR
 
 > 테스트를 위해 Foundry 리소스의 inbound 네트워크를 **public access** 로 설정했습니다. [`infra/`](#infra--terraform) 도 같은 설정(`allowed_ip_ranges` 미지정 시 모든 네트워크 허용)으로 구성됩니다. 엔터프라이즈 환경에서는 조직의 네트워크 보안 정책에 맞춰 허용 IP 제한(`allowed_ip_ranges`), Private Endpoint, VPN / Interconnect 등으로 변경해야 합니다.
 
-로그인합니다. 스크립트는 이 계정(ADC)으로 SA 를 impersonate 합니다.
+로그인합니다. 스크립트는 이 계정(gcloud CLI 자격 증명)으로 SA 를 impersonate 합니다. 4단계에서 Token Creator 를 받은 계정으로 로그인합니다.
 
 ```bash
-gcloud auth application-default login
+gcloud auth login
 ```
 
 [python/call_gpt_image.py](python/call_gpt_image.py) 를 실행합니다.
@@ -190,18 +194,16 @@ gcloud auth application-default login
 cd python && uv run call_gpt_image.py --sa <SA ID> --project <project ID> --tenant-id <tenant ID> --client-id <Managed Identity Client ID> --endpoint https://<foundry-name>.openai.azure.com
 ```
 
-| 인자 | 값 |
-|---|---|
-| `--sa` | 1단계의 Service account ID (예: `sa-aoai-gpt-image`) |
-| `--project` | GCP **project ID** (예: `mark-test-001-423712`). 생략하면 gcloud 기본 project 를 사용하며, 표시 이름과 다를 수 있으니 지정을 권장합니다. |
-| `--tenant-id` | [6단계](#6-로그-확인) Microsoft Entra ID → Overview 의 **Tenant ID** |
-| `--client-id` | [2단계](#2-azure--managed-identity-와-federated-credential) Managed Identity Overview 의 **Client ID** |
-| `--endpoint` | foundry project 내 `gpt-image` 모델 endpoint |
-| `--deployment` | `gpt-image` 모델 배포 이름 (기본값 `gpt-image-2.5-flare`) |
-| `--prompt` | 프롬프트 (선택) |
-| `--output` | 저장 파일 (기본값 `output.png`) |
-
-Cloud Run / Functions / GCE 에서는 파일 ① 단계의 주석에 있는 metadata server 호출로 바꿉니다.
+| 인자 | 값 | [Terraform](#infra--terraform) output |
+|---|---|---|
+| `--sa` | [1단계](#1-gcp--service-account-생성) SA 의 **Service account ID** (email 의 `@` 앞부분) | `gcp_service_account_id` |
+| `--project` | 1단계 SA 가 있는 GCP **project ID** | `gcp_project_id` |
+| `--tenant-id` | Microsoft Entra ID → Overview 의 **Tenant ID** | `azure_tenant_id` |
+| `--client-id` | [2단계](#2-azure--managed-identity-와-federated-credential) Managed Identity Overview 의 **Client ID** | `azure_uami_client_id` |
+| `--endpoint` | Foundry 리소스의 Azure OpenAI endpoint (`https://<foundry-name>.openai.azure.com`) | `foundry_endpoint` |
+| `--deployment` | `gpt-image-2.5-flare` 모델 배포 이름 (기본값 `gpt-image-2.5-flare`) | `foundry_deployment_name` |
+| `--prompt` | 프롬프트 (선택) | |
+| `--output` | 저장 파일 (기본값 `output.png`) | |
 
 ## 6. 로그 확인
 
@@ -229,7 +231,9 @@ Cloud Run / Functions / GCE 에서는 파일 ① 단계의 주석에 있는 meta
 
 ### `scripts/decode-jwt.sh` — 토큰 claim 확인
 
-SA 명의의 Google ID token 을 발급받아 claim 을 출력합니다. project ID 를 생략하면 gcloud 기본 project 를 사용합니다. `sub` 가 SA 의 Unique ID 와 같은지, `aud` 가 `api://AzureADTokenExchange` 인지 확인할 때 씁니다. Federated Credential 불일치 오류(`AADSTS70021`)를 확인할 때 유용합니다. 서명은 검증하지 않습니다.
+SA 명의의 Google ID token 을 발급받아 claim 을 출력합니다. `<project ID>` 는 SA 가 있는 project 입니다. `sub` 가 SA 의 Unique ID 와 같은지, `aud` 가 `api://AzureADTokenExchange` 인지 확인할 때 씁니다. Federated Credential 불일치 오류(`AADSTS70021`)를 확인할 때 유용합니다. 서명은 검증하지 않습니다.
+
+> 5단계와 같은 `gcloud auth login` 계정을 사용하며, `jq` 가 설치되어 있어야 합니다.
 
 ```bash
 scripts/decode-jwt.sh <SA ID> <project ID>
@@ -265,7 +269,7 @@ terraform -chdir=infra init
 terraform -chdir=infra apply
 ```
 
-사용자에 대한 Token Creator 역할은 만들지 않으므로 [4단계](#4-gcp--token-creator-권한-부여)는 직접 진행합니다. 5단계 인자로 쓸 값은 output 으로 확인합니다.
+사용자에 대한 Token Creator 역할은 만들지 않으므로 [4단계](#4-gcp--token-creator-권한-부여)는 직접 진행합니다. 5단계 인자로 쓸 값은 output 으로 확인합니다 ([5단계 인자 표](#5-호출)의 Terraform output 열).
 
 ```bash
 terraform -chdir=infra output

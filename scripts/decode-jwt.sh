@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # SA 명의의 Google ID token 을 발급받아 주요 claim 을 출력한다. (서명 검증 없음 — 디버깅 용도)
-# 사용법: scripts/decode-jwt.sh <SA ID> [project ID]
-#   project ID 를 생략하면 gcloud 기본 project 를 사용한다.
+# 사용법: scripts/decode-jwt.sh <SA ID> <project ID>
+#   project ID 는 SA 가 있는 project. gcloud CLI 자격 증명(gcloud auth login)으로 impersonate 한다.
 set -euo pipefail
 
-sa_id="${1:?사용법: scripts/decode-jwt.sh <SA ID> [project ID]}"
-project="${2:-$(gcloud config get-value project 2>/dev/null)}"
+usage="사용법: scripts/decode-jwt.sh <SA ID> <project ID>"
+sa_id="${1:?${usage}}"
+project="${2:?${usage}}"
 sa_email="${sa_id}@${project}.iam.gserviceaccount.com"
 
 token="$(gcloud auth print-identity-token --impersonate-service-account="${sa_email}" \
