@@ -1,0 +1,5 @@
+gcp_project_id        = "my-gcp-project"
+azure_subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# 선택: Foundry 를 특정 공인 IP(GCP Cloud NAT egress 등)에서만 허용
+# allowed_ip_ranges = ["34.64.0.10"]
