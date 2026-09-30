@@ -54,7 +54,7 @@ flowchart BT
 
 ![](assets/01%20-%20GCP%20-%20service%20account.png)
 
-**Service account name** 을 입력하면 **Service account ID** 가 자동으로 채워집니다. 5단계 `--sa` 에는 name 이 아니라 이 **ID** 를 사용합니다. **Create and continue**.
+**Service account name** 을 입력하면 **Service account ID** 가 자동으로 채워집니다. [5단계](#5-호출) `--sa` 에는 name 이 아니라 이 **ID** 를 사용합니다. **Create and continue**.
 
 ![](assets/01%20-%20GCP%20-%20service%20account%20-%2001%20account%20name.png)
 
@@ -72,7 +72,7 @@ flowchart BT
 
 ![](assets/01%20-%20GCP%20-%20service%20account%20-%2004%20create%20completion.png)
 
-SA 상세 화면에서 **Unique ID** 를 복사합니다. Google ID token 의 `sub` 가 이 값이며, 2단계 Federated Credential 의 Subject identifier 에 들어갑니다.
+SA 상세 화면에서 **Unique ID** 를 복사합니다. Google ID token 의 `sub` 가 이 값이며, [2단계](#2-azure--managed-identity-와-federated-credential) Federated Credential 의 Subject identifier 에 들어갑니다.
 
 ![](assets/01%20-%20GCP%20-%20service%20account%20-%2005%20check%20unique%20id.png)
 
