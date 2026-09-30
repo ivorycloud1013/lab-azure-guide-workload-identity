@@ -1,3 +1,11 @@
+output "gcp_project_id" {
+  value = var.gcp_project_id
+}
+
+output "gcp_service_account_id" {
+  value = module.gcp.service_account_id
+}
+
 output "azure_tenant_id" {
   value = module.azure.tenant_id
 }

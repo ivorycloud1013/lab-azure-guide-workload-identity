@@ -1,22 +1,20 @@
 # /// script
-# dependencies = ["azure-identity", "google-auth[requests]", "openai"]
+# dependencies = ["azure-identity", "openai"]
 # ///
 # GCP Service Account 로 Azure Foundry gpt-image 모델 호출 (API key 없음)
 #   uv run call_gpt_image.py --sa ... --project ... --tenant-id ... --client-id ... --endpoint ...
 import argparse
 import base64
+import subprocess
 
-import google.auth
 from azure.identity import ClientAssertionCredential, get_bearer_token_provider
-from google.auth import impersonated_credentials
-from google.auth.transport.requests import Request
 from openai import OpenAI
 
 AUDIENCE = "api://AzureADTokenExchange"
 
 parser = argparse.ArgumentParser(description="GCP Service Account 로 Azure Foundry gpt-image 모델 호출")
-parser.add_argument("--sa", required=True, help="GCP Service Account ID (예: sa-aoai-gpt-image)")
-parser.add_argument("--project", help="GCP project ID (기본값: gcloud ADC 의 project)")
+parser.add_argument("--sa", required=True, help="GCP Service Account ID (email 의 @ 앞부분)")
+parser.add_argument("--project", required=True, help="SA 가 있는 GCP project ID")
 parser.add_argument("--tenant-id", required=True, help="Microsoft Entra ID tenant ID")
 parser.add_argument("--client-id", required=True, help="Managed Identity Client ID")
 parser.add_argument("--endpoint", required=True, help="https://<foundry-name>.openai.azure.com")
@@ -26,17 +24,21 @@ parser.add_argument("--output", default="output.png")
 args = parser.parse_args()
 
 
-# ① GCP SA 의 Google ID token (local: gcloud ADC 사용자가 SA 를 impersonate)
+# ① GCP SA 의 Google ID token (local: gcloud auth login 사용자가 SA 를 impersonate)
 def google_id_token() -> str:
-    # Cloud Run / Functions / GCE 에서는 아래 한 줄로 대체
-    # return google.oauth2.id_token.fetch_id_token(Request(), AUDIENCE)
-    source, adc_project = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
     # SA email = <SA ID>@<project ID>.iam.gserviceaccount.com
-    sa_email = f"{args.sa}@{args.project or adc_project}.iam.gserviceaccount.com"
-    sa = impersonated_credentials.Credentials(source, sa_email, source.scopes)
-    token = impersonated_credentials.IDTokenCredentials(sa, target_audience=AUDIENCE, include_email=True)
-    token.refresh(Request())
-    return token.token
+    sa_email = f"{args.sa}@{args.project}.iam.gserviceaccount.com"
+    cmd = [
+        "gcloud", "auth", "print-identity-token",
+        f"--impersonate-service-account={sa_email}",
+        f"--audiences={AUDIENCE}",
+        "--include-email",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"{sa_email} 의 ID token 발급 실패 (project ID, Token Creator 권한 확인)\n{e.stderr.strip()}") from e
+    return result.stdout.strip()
 
 
 # ② ③ Google ID token → Entra ID access token (Managed Identity 의 Federated Credential)

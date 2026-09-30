@@ -4,7 +4,7 @@ variable "resource_group_name" {
 }
 
 variable "location" {
-  description = "Azure region (gpt-image-2 GlobalStandard 지원 region)"
+  description = "Azure region (gpt-image-2.5-flare GlobalStandard 지원 region)"
   type        = string
 }
 
